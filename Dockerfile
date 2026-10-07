@@ -11,6 +11,7 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
 COPY app ./app
+COPY main.py ./
 RUN uv sync --frozen --no-dev
 
 RUN useradd --system --no-create-home app && mkdir /data && chown app /data
@@ -19,4 +20,4 @@ ENV CACHE_DATABASE_URL=sqlite:////data/cache.db
 VOLUME /data
 
 EXPOSE 8000
-CMD ["/app/.venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/.venv/bin/uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
