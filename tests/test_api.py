@@ -97,8 +97,7 @@ def test_read_returns_created_output(client, sample_input, sample_output):
     assert response.json() == sample_output
 
 
-def test_read_unknown_id_returns_null_output(client):
+def test_read_unknown_id_returns_404(client):
     response = client.get(GET_URL.format("does-not-exist"))
 
-    assert response.status_code == 200
-    assert response.json() == {"output": None}
+    assert response.status_code == 404

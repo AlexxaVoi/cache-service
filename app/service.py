@@ -1,6 +1,7 @@
 import hashlib
 import logging
 
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session
@@ -48,7 +49,10 @@ def get_output(db: Session, payload_id: str) -> str | None:
     payload = db.get(Payload, payload_id)
     if payload is None:
         logger.info("Payload %s not found", payload_id)
-        return None
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Payload not found",
+        )
 
     logger.debug("Payload %s found", payload_id)
     return payload.output

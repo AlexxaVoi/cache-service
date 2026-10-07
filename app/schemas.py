@@ -24,4 +24,4 @@ class PayloadCreated(BaseModel):
 
 
 class PayloadResponse(BaseModel):
-    output: str | None
+    output: str
