@@ -1,4 +1,5 @@
 import json
+import logging
 import sys
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -11,9 +12,13 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 
 from .schemas import PayloadRequest
 
+logger = logging.getLogger(__name__)
+
 STDIO = "-"
 EXIT_FAILURE = 1
 EXIT_USAGE = 2
+LOG_LEVEL = logging.INFO
+LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
 
 class CliSettings(BaseSettings):
@@ -76,7 +81,7 @@ def load_request(settings: CliSettings, stdin: TextIO) -> PayloadRequest:
     elif settings.input == STDIO:
         raw = stdin.read()
     else:
-        assert settings.input is not None  # guaranteed by _exactly_one_input
+        assert settings.input is not None
         raw = Path(settings.input).read_text(encoding="utf-8")
     return PayloadRequest.model_validate_json(raw)
 
@@ -97,18 +102,34 @@ def run(settings: CliSettings, client: httpx.Client, stdin: TextIO = sys.stdin) 
     same id without extra transformer calls on the server.
     """
     request = load_request(settings, stdin)
+    logger.info(
+        "Loaded request with %d pairs, repeating %d time(s)",
+        len(request.list_1),
+        settings.repeat,
+    )
+
     with open_output(settings.output) as out:
-        for _ in range(settings.repeat):
+        for iteration in range(1, settings.repeat + 1):
             created = client.post("/payload", json=request.model_dump())
             created.raise_for_status()
             payload_id = created.json()["id"]
+            logger.info(
+                "Iteration %d/%d: POST /payload -> %d, id=%s",
+                iteration,
+                settings.repeat,
+                created.status_code,
+                payload_id,
+            )
 
             read = client.get(f"/payload/{payload_id}")
             read.raise_for_status()
+            logger.debug("Iteration %d/%d: payload read back", iteration, settings.repeat)
             print(json.dumps({"id": payload_id, **read.json()}), file=out)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    logging.basicConfig(level=LOG_LEVEL, format=LOG_FORMAT, stream=sys.stderr)
+
     args = sys.argv[1:] if argv is None else list(argv)
     try:
         settings = CliSettings(_cli_parse_args=args)
@@ -116,13 +137,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"cache-cli: invalid arguments:\n{exc}", file=sys.stderr)
         return EXIT_USAGE
 
+    logger.debug("Using host %s", settings.host)
     try:
         with httpx.Client(base_url=str(settings.host), timeout=30) as client:
             run(settings, client)
     except ValidationError as exc:
+        logger.debug("Request body validation failed", exc_info=True)
         print(f"cache-cli: invalid request body:\n{exc}", file=sys.stderr)
         return EXIT_USAGE
     except (httpx.HTTPError, OSError) as exc:
+        logger.debug("Request failed", exc_info=True)
         print(f"cache-cli: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     return 0
